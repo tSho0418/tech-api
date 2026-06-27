@@ -50,4 +50,11 @@ public class BatchController {
         notifierService.sendDailyDigest();
         return ResponseEntity.accepted().build();
     }
+
+    @PostMapping("/notify/test")
+    public ResponseEntity<Void> sendTestNotification() {
+        log.info("LINE test notification triggered");
+        notifierService.sendTestNotification();
+        return ResponseEntity.accepted().build();
+    }
 }

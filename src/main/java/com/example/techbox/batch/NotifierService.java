@@ -47,6 +47,11 @@ public class NotifierService {
         log.info("LINE daily digest sent: {} articles", topArticles.size());
     }
 
+    public void sendTestNotification() {
+        sendPushMessage("[TechBox] テスト通知です。LINE連携が正常に動作しています。");
+        log.info("LINE test notification sent");
+    }
+
     public void sendErrorNotification(String errorMessage) {
         try {
             sendPushMessage("[TechBox] バッチエラー: " + errorMessage);

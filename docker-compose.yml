@@ -26,6 +26,11 @@ services:
       - "8080:8080"
     env_file:
       - .env
+    environment:
+      # Docker ネットワーク内では localhost ではなくサービス名 "db" で接続する
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/itnews
+      SPRING_DATASOURCE_USERNAME: itnews
+      SPRING_DATASOURCE_PASSWORD: itnews
     depends_on:
       db:
         condition: service_healthy
