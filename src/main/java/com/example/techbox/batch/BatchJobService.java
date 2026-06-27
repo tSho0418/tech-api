@@ -3,6 +3,7 @@ package com.example.techbox.batch;
 import com.example.techbox.batch.collector.ArticleCollector;
 import com.example.techbox.domain.Article;
 import com.example.techbox.domain.BatchLog;
+import com.example.techbox.domain.Summary;
 import com.example.techbox.repository.ArticleRepository;
 import com.example.techbox.repository.BatchLogRepository;
 import com.example.techbox.repository.SummaryRepository;
@@ -13,14 +14,17 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 @Slf4j
 public class BatchJobService {
 
-    private static final long SUMMARIZE_INTERVAL_MS = 4_000;
+    // ソース間のリクエスト間隔（RPM制限への配慮）
+    private static final long SOURCE_INTERVAL_MS = 2_000;
 
     private final List<ArticleCollector> collectors;
     private final SummarizerService summarizerService;
@@ -80,25 +84,37 @@ public class BatchJobService {
             }
             log.info("Articles: fetched={}, skipped={}", fetched, skipped);
 
-            // 3. Gemini API で要約（RPM制限対策: 4秒間隔）
-            for (int i = 0; i < newArticles.size(); i++) {
-                Article article = newArticles.get(i);
+            // 3. Gemini API で要約（ソース別に一括リクエストしてAPI使用回数を削減）
+            Map<String, List<Article>> bySource = newArticles.stream()
+                    .collect(Collectors.groupingBy(a -> a.getSource().getName()));
+
+            boolean quotaExceeded = false;
+            for (Map.Entry<String, List<Article>> entry : bySource.entrySet()) {
+                String sourceName = entry.getKey();
+                List<Article> sourceArticles = entry.getValue();
+
+                if (quotaExceeded) {
+                    log.info("Skipping summarization for [{}]: daily quota already exceeded", sourceName);
+                    errors += sourceArticles.size();
+                    continue;
+                }
+
                 try {
-                    summaryRepository.save(summarizerService.summarize(article));
-                    Thread.sleep(SUMMARIZE_INTERVAL_MS);
+                    log.info("Summarizing {} articles from [{}] in one request", sourceArticles.size(), sourceName);
+                    List<Summary> summaries = summarizerService.summarizeBatch(sourceArticles);
+                    summaries.forEach(summaryRepository::save);
+                    log.info("[{}] Saved {} summaries", sourceName, summaries.size());
+                    Thread.sleep(SOURCE_INTERVAL_MS);
                 } catch (SummarizerService.DailyQuotaExceededException e) {
-                    // 日次クォータ超過: 残りの記事はスキップしてバッチを継続
-                    int remaining = newArticles.size() - i - 1;
-                    log.warn("Gemini daily quota exceeded after {} summaries. Skipping {} remaining articles.",
-                            i, remaining);
-                    errors += remaining;
-                    break;
+                    log.warn("Daily quota exceeded while processing [{}]. Skipping remaining sources.", sourceName);
+                    quotaExceeded = true;
+                    errors += sourceArticles.size();
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("Batch interrupted during summarization", e);
                 } catch (Exception e) {
-                    log.error("Summarization failed for article {}", article.getId(), e);
-                    errors++;
+                    log.error("Batch summarization failed for source [{}]", sourceName, e);
+                    errors += sourceArticles.size();
                 }
             }
 
