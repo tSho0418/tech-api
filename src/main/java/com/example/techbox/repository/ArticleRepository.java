@@ -29,4 +29,11 @@ public interface ArticleRepository extends JpaRepository<Article, UUID> {
 
     @Query("SELECT a FROM Article a WHERE a.notified = false ORDER BY a.score DESC NULLS LAST")
     List<Article> findUnnotifiedOrderByScoreDesc(Pageable pageable);
+
+    // ソース別件数（trending/sources 用）
+    @Query("SELECT a.source.name, COUNT(a) FROM Article a WHERE a.fetchedAt >= :start AND a.fetchedAt < :end GROUP BY a.source.name")
+    List<Object[]> countBySourceForPeriod(@Param("start") OffsetDateTime start, @Param("end") OffsetDateTime end);
+
+    // ダッシュボード統計用
+    long countByFetchedAtBetween(OffsetDateTime start, OffsetDateTime end);
 }
