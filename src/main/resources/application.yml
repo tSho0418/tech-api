@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: techbox
+  datasource:
+    url: ${SPRING_DATASOURCE_URL}
+    username: ${SPRING_DATASOURCE_USERNAME:itnews}
+    password: ${SPRING_DATASOURCE_PASSWORD:itnews}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+
+app:
+  security:
+    api-key: ${API_SECRET_KEY}
+  cors:
+    allowed-origin: ${FRONTEND_ORIGIN:http://localhost:3000}
+  gemini:
+    api-key: ${GEMINI_API_KEY}
+  line:
+    channel-access-token: ${LINE_CHANNEL_ACCESS_TOKEN}
+    user-id: ${LINE_USER_ID}
