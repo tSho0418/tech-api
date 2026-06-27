@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: itnews_test
+          POSTGRES_USER: itnews
+          POSTGRES_PASSWORD: itnews
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: "21"
+          distribution: "temurin"
+          cache: gradle
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build and test
+        run: ./gradlew build
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/itnews_test
+          SPRING_DATASOURCE_USERNAME: itnews
+          SPRING_DATASOURCE_PASSWORD: itnews
+          SPRING_JPA_HIBERNATE_DDL_AUTO: none
+          API_SECRET_KEY: ci-test-secret-key
+          FRONTEND_ORIGIN: http://localhost:3000
+          GEMINI_API_KEY: ci-test-key
+          LINE_CHANNEL_ACCESS_TOKEN: ci-test-token
+          LINE_USER_ID: ci-test-user-id
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: build/reports/tests/test/
+          retention-days: 7
