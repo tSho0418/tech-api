@@ -81,10 +81,18 @@ public class BatchJobService {
             log.info("Articles: fetched={}, skipped={}", fetched, skipped);
 
             // 3. Gemini API で要約（RPM制限対策: 4秒間隔）
-            for (Article article : newArticles) {
+            for (int i = 0; i < newArticles.size(); i++) {
+                Article article = newArticles.get(i);
                 try {
                     summaryRepository.save(summarizerService.summarize(article));
                     Thread.sleep(SUMMARIZE_INTERVAL_MS);
+                } catch (SummarizerService.DailyQuotaExceededException e) {
+                    // 日次クォータ超過: 残りの記事はスキップしてバッチを継続
+                    int remaining = newArticles.size() - i - 1;
+                    log.warn("Gemini daily quota exceeded after {} summaries. Skipping {} remaining articles.",
+                            i, remaining);
+                    errors += remaining;
+                    break;
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("Batch interrupted during summarization", e);
