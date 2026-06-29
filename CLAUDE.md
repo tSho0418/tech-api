@@ -546,3 +546,229 @@ docker compose down
 docker compose down -v
 ```
 
+---
+
+## 12. API レスポンス形式
+
+フロントエンド実装の参照用。全フィールドは **camelCase**（Jackson デフォルト）。日時は ISO 8601 形式（例: `"2026-06-28T07:00:00Z"`）。
+
+### 12-1. 共通
+
+#### エラーレスポンス（4xx / 5xx）
+
+```json
+{
+  "code": "NOT_FOUND",
+  "message": "Article not found: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+}
+```
+
+| code | HTTP | 発生条件 |
+|---|---|---|
+| `FORBIDDEN` | 403 | `X-API-Key` ヘッダーが不正または欠落 |
+| `NOT_FOUND` | 404 | 指定 ID のリソースが存在しない |
+| `VALIDATION_ERROR` | 400 | クエリパラメータのバリデーション失敗 |
+| `INTERNAL_ERROR` | 500 | サーバー内部エラー |
+
+#### ページネーションレスポンス（`PageResponse<T>`）
+
+`GET /api/articles` のみ使用。
+
+```json
+{
+  "content": [],
+  "page": 0,
+  "size": 20,
+  "totalElements": 87,
+  "totalPages": 5,
+  "last": false
+}
+```
+
+---
+
+### 12-2. 記事系
+
+#### `ArticleResponse`（記事1件）
+
+`GET /api/articles`・`GET /api/articles/today`・`GET /api/articles/{id}` で使用。
+
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "sourceName": "Hacker News",
+  "title": "Why does kinetic energy increase quadratically with speed?",
+  "url": "https://physics.stackexchange.com/questions/535/...",
+  "author": "username",
+  "score": 342,
+  "tags": ["physics", "energy"],
+  "language": "en",
+  "publishedAt": "2026-06-28T10:00:00Z",
+  "fetchedAt": "2026-06-28T07:00:00Z",
+  "notified": false,
+  "summary": {
+    "id": "660e8400-e29b-41d4-a716-446655440001",
+    "summaryJa": "運動エネルギーが速度の2乗に比例する理由を解説...",
+    "reasonJa": "物理学の基礎概念への関心が高まっている",
+    "qualityScore": 0.85,
+    "modelUsed": "gemini-2.5-flash"
+  }
+}
+```
+
+- `summary` はまだ要約されていない場合 `null`
+- `author` / `score` / `tags` / `publishedAt` はソースによって `null` の場合あり
+- `language`: `"en"` または `"ja"`
+
+#### `GET /api/articles` クエリパラメータ
+
+| パラメータ | デフォルト | 説明 |
+|---|---|---|
+| `source` | なし | ソース名でフィルタ（例: `"Hacker News"`） |
+| `tag` | なし | タグでフィルタ |
+| `date` | 当日 | 対象日（ISO 8601 date: `2026-06-28`） |
+| `page` | `0` | ページ番号（0始まり） |
+| `size` | `20` | 1ページあたり件数 |
+
+#### `GET /api/articles/today` レスポンス
+
+ページネーションなし。スコア降順の配列を返す。
+
+```json
+[
+  { "id": "...", "sourceName": "Hacker News", ... },
+  { "id": "...", "sourceName": "Zenn", ... }
+]
+```
+
+#### `PATCH /api/articles/{id}/read` レスポンス
+
+`204 No Content`（ボディなし）
+
+---
+
+### 12-3. トレンド系
+
+#### `GET /api/trending/keywords`
+
+急上昇キーワードのランキング。
+
+```json
+[
+  { "keyword": "AI", "totalCount": 15 },
+  { "keyword": "Rust", "totalCount": 9 },
+  { "keyword": "WebAssembly", "totalCount": 6 }
+]
+```
+
+| クエリ | デフォルト | 説明 |
+|---|---|---|
+| `days` | `7` | 集計対象の日数 |
+| `limit` | `20` | 返却件数上限 |
+
+#### `GET /api/trending/keywords/{keyword}/history`
+
+キーワードの日別推移（グラフ用）。
+
+```json
+[
+  {
+    "id": "770e8400-e29b-41d4-a716-446655440002",
+    "keyword": "AI",
+    "count": 8,
+    "prevCount": 5,
+    "growthRate": 0.6,
+    "date": "2026-06-28"
+  },
+  {
+    "id": "880e8400-e29b-41d4-a716-446655440003",
+    "keyword": "AI",
+    "count": 5,
+    "prevCount": 3,
+    "growthRate": 0.67,
+    "date": "2026-06-27"
+  }
+]
+```
+
+- `growthRate`: `(count - prevCount) / prevCount`。初日など前日データがない場合は `null`
+- 日付降順で返却
+
+#### `GET /api/trending/sources`
+
+ソース別取得件数（本日 / 直近7日）。週合計の多い順にソートされる。
+
+```json
+[
+  { "sourceName": "Hacker News", "todayCount": 30, "weekCount": 187 },
+  { "sourceName": "dev.to",      "todayCount": 20, "weekCount": 134 },
+  { "sourceName": "Qiita",       "todayCount": 20, "weekCount": 130 },
+  { "sourceName": "Zenn",        "todayCount": 20, "weekCount": 128 },
+  { "sourceName": "GitHub Trending", "todayCount": 0, "weekCount": 87 }
+]
+```
+
+#### `GET /api/trending/stats`
+
+ダッシュボード上部のサマリーカード用。
+
+```json
+{
+  "totalArticles": 523,
+  "todayArticles": 87,
+  "sourceCount": 5,
+  "summaryCount": 450
+}
+```
+
+---
+
+### 12-4. バッチ管理系
+
+#### `BatchLogResponse`（バッチログ1件）
+
+`GET /api/batch/status`・`GET /api/batch/logs` で使用。
+
+```json
+{
+  "id": "990e8400-e29b-41d4-a716-446655440004",
+  "batchType": "full",
+  "status": "success",
+  "fetchedCount": 45,
+  "skippedCount": 42,
+  "errorCount": 0,
+  "errorDetail": null,
+  "startedAt": "2026-06-28T07:00:00Z",
+  "finishedAt": "2026-06-28T07:05:32Z"
+}
+```
+
+| フィールド | 説明 |
+|---|---|
+| `batchType` | `"full"` のみ（現在） |
+| `status` | `"running"` / `"success"` / `"partial"` / `"fail"` |
+| `fetchedCount` | 新規保存した記事数 |
+| `skippedCount` | URL重複でスキップした記事数 |
+| `errorCount` | 要約失敗・スキップした記事数 |
+| `errorDetail` | `"fail"` 時のエラーメッセージ。それ以外は `null` |
+| `finishedAt` | `"running"` 中は `null` |
+
+#### `GET /api/batch/logs` レスポンス
+
+`BatchLogResponse` の配列（デフォルト最新30件）。
+
+```json
+[
+  { "id": "...", "status": "success", ... },
+  { "id": "...", "status": "partial", ... }
+]
+```
+
+| クエリ | デフォルト | 説明 |
+|---|---|---|
+| `limit` | `30` | 返却件数上限 |
+
+#### `POST /api/batch/run` / `POST /api/batch/notify` / `POST /api/batch/notify/test`
+
+`202 Accepted`（ボディなし）。バッチは非同期実行のため即時リターン。
+
